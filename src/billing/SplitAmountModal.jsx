@@ -1,60 +1,51 @@
 import React, { useState, useMemo } from "react";
 import { useLanguage } from "../context/LanguageContext";
 
+const DEFAULT_TAX = 10;
+const DEFAULT_SERVICE = 10;
+
 const SplitAmountModal = ({ total, paymentMethods = [], onClose, onConfirm }) => {
   const { t, lang } = useLanguage();
 
-  const [entries, setEntries] = useState([
-    { amount: "", methodId: "", ref: "", taxPercent: "", service: "", tips: "" },
-  ]);
+  const [entry, setEntry] = useState({
+    amountPaid: "",
+    methodId: "",
+    ref: "",
+    taxPercent: DEFAULT_TAX,
+    tax: 0,
+    service: (total * DEFAULT_SERVICE) / 100,
+    tips: 0,
+  });
 
-  const handleChange = (index, field, value) => {
-    const updated = [...entries];
-    updated[index][field] = value;
-    setEntries(updated);
+  const handleChange = (field, value) => {
+    const updated = { ...entry, [field]: value };
+
+    if (field === "amountPaid" || field === "taxPercent") {
+      const paid = parseFloat(field === "amountPaid" ? value : updated.amountPaid || 0);
+      const taxRate = parseFloat(field === "taxPercent" ? value : updated.taxPercent || 0);
+      const tax = (total * taxRate) / 100;
+      const service = (total * DEFAULT_SERVICE) / 100;
+      const tips = paid - (total + tax + service);
+
+      updated.tax = tax;
+      updated.service = service;
+      updated.tips = tips > 0 ? tips : 0;
+    }
+
+    setEntry(updated);
   };
 
-  const addEntry = () => {
-    setEntries([
-      ...entries,
-      { amount: "", methodId: "", ref: "", taxPercent: "", service: "", tips: "" },
-    ]);
-  };
-
-  const baseTotal = useMemo(
-    () => entries.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0),
-    [entries]
-  );
-
-  const actualTotalPaid = useMemo(() =>
-    entries.reduce((sum, e) => {
-      const base = parseFloat(e.amount || 0);
-      const tax = (parseFloat(e.taxPercent || 0) / 100) * base;
-      const service_charge = parseFloat(e.service || 0);
-      const tips = parseFloat(e.tips || 0);
-      return sum + base + tax + service_charge + tips; // ✅ corrected
-    }, 0),
-    [entries]
-  );
-
- 
-  const isValid =
-    parseFloat(baseTotal.toFixed(2)) === parseFloat(parseFloat(total || 0).toFixed(2)) &&
-    entries.every((e) => e.amount && e.methodId);
+  const isValid = entry.amountPaid && entry.methodId;
 
   const handleConfirm = () => {
-    const structured = entries.map((e) => {
-      const amount = parseFloat(e.amount);
-      const taxRate = parseFloat(e.taxPercent || 0) / 100;
-      return {
-        amount,
-        method: parseInt(e.methodId),
-        ref: e.ref || "",
-        tax: parseFloat((amount * taxRate).toFixed(2)),
-        service_charge: parseFloat(e.service || 0),
-        tips: parseFloat(e.tips || 0),
-      };
-    });
+    const structured = [{
+      amount: parseFloat(total),
+      method: parseInt(entry.methodId),
+      ref: entry.ref || "",
+      tax: parseFloat(entry.tax || 0),
+      service_charge: parseFloat(entry.service || 0),
+      tips: parseFloat(entry.tips || 0),
+    }];
     onConfirm(structured);
   };
 
@@ -67,121 +58,86 @@ const SplitAmountModal = ({ total, paymentMethods = [], onClose, onConfirm }) =>
           {t("split_total")}: {parseFloat(total).toFixed(2)} EGP
         </div>
 
-        {entries.map((entry, idx) => {
-          const amount = parseFloat(entry.amount || 0);
-          const taxRate = parseFloat(entry.taxPercent || 0);
-          const taxValue = (amount * taxRate) / 100;
+        {/* Row 1 */}
+        <div className="flex flex-wrap gap-2 items-center mb-2">
+          <select
+            value={entry.methodId}
+            onChange={(e) => handleChange("methodId", e.target.value)}
+            className="border rounded px-2 py-1 w-[35%]"
+          >
+            <option value="">{t("select_payment_method")}</option>
+            {paymentMethods.map((pm) => (
+              <option key={pm.id} value={pm.id}>
+                {lang === "ar" ? pm.name_ar : pm.name}
+              </option>
+            ))}
+          </select>
 
-          return (
-            <div key={idx} className="mb-4 border p-3 rounded">
-              <div className="flex flex-wrap gap-2 items-center mb-2">
-                <input
-                  type="number"
-                  value={entry.amount}
-                  onChange={(e) => handleChange(idx, "amount", e.target.value)}
-                  placeholder={t("amount")}
-                  className="border rounded px-2 py-1 w-[30%]"
-                />
+          <input
+            type="text"
+            value={entry.ref}
+            onChange={(e) => handleChange("ref", e.target.value)}
+            placeholder={t("reference_optional")}
+            className="border rounded px-2 py-1 w-[30%]"
+          />
+        </div>
 
-                <select
-                  value={entry.methodId}
-                  onChange={(e) => handleChange(idx, "methodId", e.target.value)}
-                  className="border rounded px-2 py-1 w-[35%]"
-                >
-                  <option value="">{t("select_payment_method")}</option>
-                  {paymentMethods.map((pm) => (
-                    <option key={pm.id} value={pm.id}>
-                      {lang === "ar" ? pm.name_ar : pm.name}
-                    </option>
-                  ))}
-                </select>
+        {/* Row 2 */}
+        <div className="flex flex-wrap gap-2 items-center mb-2">
+          <input
+            type="number"
+            value={entry.taxPercent}
+            onChange={(e) => handleChange("taxPercent", e.target.value)}
+            placeholder={t("tax_percent")}
+            className="border rounded px-2 py-1 w-[30%]"
+          />
+          <input
+            type="number"
+            value={entry.service.toFixed(2)}
+            readOnly
+            placeholder={t("service_charge")}
+            className="border rounded px-2 py-1 w-[30%] bg-gray-100"
+          />
+          <input
+            type="number"
+            value={entry.amountPaid}
+            onChange={(e) => handleChange("amountPaid", e.target.value)}
+            placeholder={t("amount_paid")}
+            className="border rounded px-2 py-1 w-[30%]"
+          />
+        </div>
 
-                <input
-                  type="text"
-                  value={entry.ref}
-                  onChange={(e) => handleChange(idx, "ref", e.target.value)}
-                  placeholder={t("reference_optional")}
-                  className="border rounded px-2 py-1 w-[30%]"
-                />
-              </div>
+        {/* Tip Display */}
+        <div className="text-sm text-gray-700 ml-1 mb-4">
+          {t("tip_amount")}: <strong>{entry.tips.toFixed(2)} EGP</strong>
+        </div>
 
-              <div className="flex flex-wrap gap-2 items-center">
-                <div className="w-[30%]">
-                  <input
-                    type="number"
-                    value={entry.taxPercent}
-                    onChange={(e) => handleChange(idx, "taxPercent", e.target.value)}
-                    placeholder={`${t("tax")} (%)`}
-                    className="border rounded px-2 py-1 w-full"
-                  />
-                  {amount > 0 && taxRate > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      {t("calculated_tax")}: {taxValue.toFixed(2)} EGP
-                    </p>
-                  )}
-                </div>
-
-                <input
-                  type="number"
-                  value={entry.service}
-                  onChange={(e) => handleChange(idx, "service", e.target.value)}
-                  placeholder={t("service_charge")}
-                  className="border rounded px-2 py-1 w-[30%]"
-                />
-                <input
-                  type="number"
-                  value={entry.tips}
-                  onChange={(e) => handleChange(idx, "tips", e.target.value)}
-                  placeholder={t("tips")}
-                  className="border rounded px-2 py-1 w-[30%]"
-                />
-              </div>
-            </div>
-          );
-        })}
-
+        {/* Summary */}
         <div className="text-sm mb-2 flex justify-between items-center">
           <div>
-            {t("total_paid")}: <strong>{baseTotal.toFixed(2)} EGP</strong>
-            {!isValid && (
-              <span className="text-red-600 ml-2">
-                ({t("check_entries_total_method")})
-              </span>
-            )}
-            <p className="text-xs text-gray-500">
-              {t("with_extras")}: {actualTotalPaid.toFixed(2)} EGP
-            </p>
+            {t("with_extras")}: {(total + entry.tax + entry.service).toFixed(2)} EGP
           </div>
-
           <div className="text-xs bg-gray-100 px-3 py-1 rounded-full text-gray-700 font-medium">
             {t("expected_total")}: {parseFloat(total).toFixed(2)} EGP
           </div>
         </div>
 
-        <div className="flex justify-between items-center">
+        {/* Footer */}
+        <div className="flex justify-end items-center gap-2">
           <button
-            onClick={addEntry}
-            className="text-sm text-blue-600 hover:underline"
+            onClick={onClose}
+            className="px-4 py-2 border rounded text-gray-600"
           >
-            + {t("add_payment")}
+            {t("cancel")}
           </button>
-
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border rounded text-gray-600"
-            >
-              {t("cancel")}
-            </button>
-            <button
-              disabled={!isValid}
-              onClick={handleConfirm}
-              className={`px-4 py-2 rounded text-white ${isValid ? "bg-green-600 hover:bg-green-700" : "bg-gray-400 cursor-not-allowed"
-                }`}
-            >
-              {t("confirm")}
-            </button>
-          </div>
+          <button
+            disabled={!isValid}
+            onClick={handleConfirm}
+            className={`px-4 py-2 rounded text-white ${isValid ? "bg-green-600 hover:bg-green-700" : "bg-gray-400 cursor-not-allowed"
+              }`}
+          >
+            {t("confirm")}
+          </button>
         </div>
       </div>
     </div>
